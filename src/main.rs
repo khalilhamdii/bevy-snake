@@ -1,11 +1,19 @@
 use bevy::prelude::*;
+// use bevy::time::FixedTimestep;
+use bevy::time::common_conditions::*;
+use core::time::Duration;
+use rand::prelude::random;
 
 const SNAKE_HEAD_COLOR: Color = Color::srgb(0.7, 0.7, 0.7);
 const ARENA_WIDTH: u32 = 10;
 const ARENA_HEIGHT: u32 = 10;
+const FOOD_COLOR: Color = Color::srgb(1.0, 0.0, 1.0); // <--
+
 #[derive(Component)]
 struct SnakeHead;
 
+#[derive(Component)]
+struct Food;
 #[derive(Component, Clone, Copy, PartialEq, Eq)]
 struct Position {
     x: i32,
@@ -95,6 +103,25 @@ fn snake_movement(
     }
 }
 
+struct FoodSpawnTimer(Timer);
+
+fn food_spawner(mut commands: Commands) {
+    commands
+        .spawn(SpriteBundle {
+            sprite: Sprite {
+                color: FOOD_COLOR,
+                ..default()
+            },
+            ..default()
+        })
+        .insert(Food)
+        .insert(Position {
+            x: (random::<f32>() * ARENA_WIDTH as f32) as i32,
+            y: (random::<f32>() * ARENA_HEIGHT as f32) as i32,
+        })
+        .insert(Size::square(0.8));
+}
+
 fn main() {
     App::new()
         .insert_resource(ClearColor(Color::srgb(0.04, 0.04, 0.04)))
@@ -109,6 +136,10 @@ fn main() {
         .add_systems(Startup, setup_camera) // <--
         .add_systems(Startup, spawn_snake)
         .add_systems(Update, snake_movement)
+        .add_systems(
+            FixedUpdate,
+            food_spawner.run_if(on_timer(Duration::from_secs(1))),
+        )
         .add_systems(PostUpdate, (position_translation, size_scaling).chain()) // TO VERIFY LATER //<--
         .run();
 }
