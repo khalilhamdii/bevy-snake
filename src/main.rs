@@ -10,7 +10,9 @@ const ARENA_HEIGHT: u32 = 10;
 const FOOD_COLOR: Color = Color::srgb(1.0, 0.0, 1.0); // <--
 
 #[derive(Component)]
-struct SnakeHead;
+struct SnakeHead {
+    direction: Direction,
+}
 
 #[derive(Component)]
 struct Food;
@@ -35,6 +37,25 @@ impl Size {
     }
 }
 
+#[derive(PartialEq, Copy, Clone)]
+enum Direction {
+    Left,
+    Up,
+    Right,
+    Down,
+}
+
+impl Direction {
+    fn opposite(self) -> Self {
+        match self {
+            Self::Left => Self::Right,
+            Self::Right => Self::Left,
+            Self::Up => Self::Down,
+            Self::Down => Self::Up,
+        }
+    }
+}
+
 fn setup_camera(mut commands: Commands) {
     commands.spawn(Camera2dBundle::default());
 }
@@ -52,7 +73,9 @@ fn spawn_snake(mut commands: Commands) {
             },
             ..default()
         })
-        .insert(SnakeHead)
+        .insert(SnakeHead {
+            direction: Direction::Up,
+        })
         .insert(Position { x: 3, y: 3 })
         .insert(Size::square(0.8));
 }
@@ -83,27 +106,46 @@ fn position_translation(windows: Query<&Window>, mut q: Query<(&Position, &mut T
     }
 }
 
-fn snake_movement(
+fn snake_movement_input(
     keyboard_input: Res<ButtonInput<KeyCode>>,
-    mut head_positions: Query<&mut Position, With<SnakeHead>>,
+    mut heads: Query<&mut SnakeHead>,
 ) {
-    for mut position in head_positions.iter_mut() {
-        if keyboard_input.pressed(KeyCode::ArrowLeft) {
-            position.x -= 1;
-        }
-        if keyboard_input.pressed(KeyCode::ArrowRight) {
-            position.x += 1;
-        }
-        if keyboard_input.pressed(KeyCode::ArrowDown) {
-            position.y -= 1;
-        }
-        if keyboard_input.pressed(KeyCode::ArrowUp) {
-            position.y += 1;
+    if let Some(mut head) = heads.iter_mut().next() {
+        let dir: Direction = if keyboard_input.pressed(KeyCode::ArrowLeft) {
+            Direction::Left
+        } else if keyboard_input.pressed(KeyCode::ArrowDown) {
+            Direction::Down
+        } else if keyboard_input.pressed(KeyCode::ArrowUp) {
+            Direction::Up
+        } else if keyboard_input.pressed(KeyCode::ArrowRight) {
+            Direction::Right
+        } else {
+            head.direction
+        };
+        if dir != head.direction.opposite() {
+            head.direction = dir;
         }
     }
 }
 
-struct FoodSpawnTimer(Timer);
+fn snake_movement(mut heads: Query<(&mut Position, &SnakeHead)>) {
+    if let Some((mut head_pos, head)) = heads.iter_mut().next() {
+        match &head.direction {
+            Direction::Left => {
+                head_pos.x -= 1;
+            }
+            Direction::Right => {
+                head_pos.x += 1;
+            }
+            Direction::Up => {
+                head_pos.y += 1;
+            }
+            Direction::Down => {
+                head_pos.y -= 1;
+            }
+        };
+    }
+}
 
 fn food_spawner(mut commands: Commands) {
     commands
@@ -135,11 +177,15 @@ fn main() {
         }))
         .add_systems(Startup, setup_camera) // <--
         .add_systems(Startup, spawn_snake)
-        .add_systems(Update, snake_movement)
+        .add_systems(
+            FixedUpdate,
+            snake_movement.run_if(on_timer(Duration::from_millis(500))),
+        )
         .add_systems(
             FixedUpdate,
             food_spawner.run_if(on_timer(Duration::from_secs(1))),
         )
+        .add_systems(Update, snake_movement_input.before(snake_movement))
         .add_systems(PostUpdate, (position_translation, size_scaling).chain()) // TO VERIFY LATER //<--
         .run();
 }
