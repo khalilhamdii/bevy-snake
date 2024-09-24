@@ -7,7 +7,7 @@ const SNAKE_HEAD_COLOR: Color = Color::srgb(0.7, 0.7, 0.7);
 const ARENA_WIDTH: u32 = 10;
 const ARENA_HEIGHT: u32 = 10;
 const FOOD_COLOR: Color = Color::srgb(1.0, 0.0, 1.0);
-const SNAKE_SEGMENT_COLOR: Color = Color::rgb(0.3, 0.3, 0.3);
+const SNAKE_SEGMENT_COLOR: Color = Color::srgb(0.3, 0.3, 0.3);
 
 #[derive(Component)]
 struct SnakeHead {
@@ -61,6 +61,12 @@ struct SnakeSegment;
 
 #[derive(Resource, Default)]
 struct SnakeSegments(Vec<Entity>);
+
+#[derive(Event)]
+struct GrowthEvent;
+
+#[derive(Resource, Default)]
+struct LastTailPosition(Option<Position>);
 
 fn setup_camera(mut commands: Commands) {
     commands.spawn(Camera2dBundle::default());
@@ -150,8 +156,21 @@ fn snake_movement_input(
     }
 }
 
-fn snake_movement(mut heads: Query<(&mut Position, &SnakeHead)>) {
-    if let Some((mut head_pos, head)) = heads.iter_mut().next() {
+fn snake_movement(
+    segments: ResMut<SnakeSegments>,
+    mut heads: Query<(Entity, &SnakeHead)>,
+    mut positions: Query<&mut Position>,
+    mut last_tail_position: ResMut<LastTailPosition>,
+) {
+    if let Some((head_entity, head)) = heads.iter_mut().next() {
+        let segment_positions = segments
+            .0
+            .iter()
+            .map(|e| *positions.get_mut(*e).unwrap())
+            .collect::<Vec<Position>>();
+        *last_tail_position = LastTailPosition(Some(*segment_positions.last().unwrap()));
+
+        let mut head_pos = positions.get_mut(head_entity).unwrap();
         match &head.direction {
             Direction::Left => {
                 head_pos.x -= 1;
@@ -166,6 +185,12 @@ fn snake_movement(mut heads: Query<(&mut Position, &SnakeHead)>) {
                 head_pos.y -= 1;
             }
         };
+        segment_positions
+            .iter()
+            .zip(segments.0.iter().skip(1))
+            .for_each(|(pos, segment)| {
+                *positions.get_mut(*segment).unwrap() = *pos;
+            });
     }
 }
 
@@ -186,10 +211,37 @@ fn food_spawner(mut commands: Commands) {
         .insert(Size::square(0.8));
 }
 
+fn snake_eating(
+    mut commands: Commands,
+    mut growth_writer: EventWriter<GrowthEvent>,
+    food_positions: Query<(Entity, &Position), With<Food>>,
+    head_positions: Query<&Position, With<SnakeHead>>,
+) {
+    for head_pos in head_positions.iter() {
+        for (ent, food_pos) in food_positions.iter() {
+            if food_pos == head_pos {
+                commands.entity(ent).despawn();
+                growth_writer.send(GrowthEvent);
+            }
+        }
+    }
+}
+
+fn snake_growth(
+    commands: Commands,
+    last_tail_position: Res<LastTailPosition>,
+    mut segments: ResMut<SnakeSegments>,
+    mut growth_reader: EventReader<GrowthEvent>,
+) {
+    if growth_reader.read().next().is_some() {
+        segments
+            .0
+            .push(spawn_segment(commands, last_tail_position.0.unwrap()));
+    }
+}
+
 fn main() {
     App::new()
-        .insert_resource(ClearColor(Color::srgb(0.04, 0.04, 0.04)))
-        .insert_resource(SnakeSegments::default())
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
                 title: "Snake!".to_string(), // <--
@@ -198,6 +250,10 @@ fn main() {
             }),
             ..default()
         }))
+        .insert_resource(ClearColor(Color::srgb(0.04, 0.04, 0.04)))
+        .insert_resource(SnakeSegments::default())
+        .insert_resource(LastTailPosition::default())
+        .add_event::<GrowthEvent>()
         .add_systems(Startup, setup_camera) // <--
         .add_systems(Startup, spawn_snake)
         .add_systems(
@@ -209,6 +265,18 @@ fn main() {
             food_spawner.run_if(on_timer(Duration::from_secs(1))),
         )
         .add_systems(Update, snake_movement_input.before(snake_movement))
-        .add_systems(PostUpdate, (position_translation, size_scaling).chain()) // TO VERIFY LATER //<--
+        .add_systems(Update, snake_eating.after(snake_movement))
+        .add_systems(Update, snake_growth.after(snake_eating))
+        // .add_systems(
+        //     Update,
+        //     (
+        //         snake_movement_input,
+        //         snake_movement,
+        //         snake_eating,
+        //         snake_growth,
+        //     )
+        //         .chain(),
+        // )
+        .add_systems(PostUpdate, (position_translation, size_scaling))
         .run();
 }
