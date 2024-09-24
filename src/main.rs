@@ -3,73 +3,28 @@ use bevy::time::common_conditions::*;
 use core::time::Duration;
 use rand::prelude::random;
 
+mod components;
+mod events;
+mod resources;
+mod utilities;
+
+use crate::components::food::*;
+use crate::components::position::*;
+use crate::components::size::*;
+use crate::components::snake::*;
+
+use crate::resources::last_tail_position::*;
+use crate::resources::snake_segments::SnakeSegments;
+
+use crate::events::gameover::*;
+use crate::events::growth::*;
+use crate::utilities::Direction;
+
 const SNAKE_HEAD_COLOR: Color = Color::srgb(0.7, 0.7, 0.7);
 const ARENA_WIDTH: u32 = 10;
 const ARENA_HEIGHT: u32 = 10;
 const FOOD_COLOR: Color = Color::srgb(1.0, 0.0, 1.0);
 const SNAKE_SEGMENT_COLOR: Color = Color::srgb(0.3, 0.3, 0.3);
-
-#[derive(Component)]
-struct SnakeHead {
-    direction: Direction,
-}
-
-#[derive(Component)]
-struct Food;
-#[derive(Component, Clone, Copy, PartialEq, Eq)]
-struct Position {
-    x: i32,
-    y: i32,
-}
-
-#[derive(Component)]
-struct Size {
-    width: f32,
-    height: f32,
-}
-
-impl Size {
-    pub fn square(x: f32) -> Self {
-        Self {
-            width: x,
-            height: x,
-        }
-    }
-}
-
-#[derive(PartialEq, Copy, Clone)]
-enum Direction {
-    Left,
-    Up,
-    Right,
-    Down,
-}
-
-impl Direction {
-    fn opposite(self) -> Self {
-        match self {
-            Self::Left => Self::Right,
-            Self::Right => Self::Left,
-            Self::Up => Self::Down,
-            Self::Down => Self::Up,
-        }
-    }
-}
-
-#[derive(Component)]
-struct SnakeSegment;
-
-#[derive(Resource, Default)]
-struct SnakeSegments(Vec<Entity>);
-
-#[derive(Event)]
-struct GrowthEvent;
-
-#[derive(Resource, Default)]
-struct LastTailPosition(Option<Position>);
-
-#[derive(Event)]
-struct GameOverEvent;
 
 fn setup_camera(mut commands: Commands) {
     commands.spawn(Camera2dBundle::default());
