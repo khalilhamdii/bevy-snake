@@ -68,6 +68,9 @@ struct GrowthEvent;
 #[derive(Resource, Default)]
 struct LastTailPosition(Option<Position>);
 
+#[derive(Event)]
+struct GameOverEvent;
+
 fn setup_camera(mut commands: Commands) {
     commands.spawn(Camera2dBundle::default());
 }
@@ -161,6 +164,7 @@ fn snake_movement(
     mut heads: Query<(Entity, &SnakeHead)>,
     mut positions: Query<&mut Position>,
     mut last_tail_position: ResMut<LastTailPosition>,
+    mut game_over_writer: EventWriter<GameOverEvent>,
 ) {
     if let Some((head_entity, head)) = heads.iter_mut().next() {
         let segment_positions = segments
@@ -185,6 +189,19 @@ fn snake_movement(
                 head_pos.y -= 1;
             }
         };
+
+        if head_pos.x < 0
+            || head_pos.y < 0
+            || head_pos.x as u32 >= ARENA_WIDTH
+            || head_pos.y as u32 >= ARENA_HEIGHT
+        {
+            game_over_writer.send(GameOverEvent);
+        }
+
+        if segment_positions.contains(&head_pos) {
+            game_over_writer.send(GameOverEvent);
+        }
+
         segment_positions
             .iter()
             .zip(segments.0.iter().skip(1))
@@ -240,6 +257,21 @@ fn snake_growth(
     }
 }
 
+fn game_over(
+    mut commands: Commands,
+    mut reader: EventReader<GameOverEvent>,
+    segments_res: ResMut<SnakeSegments>,
+    food: Query<Entity, With<Food>>,
+    segments: Query<Entity, With<SnakeSegment>>,
+) {
+    if reader.read().next().is_some() {
+        for ent in food.iter().chain(segments.iter()) {
+            commands.entity(ent).despawn();
+        }
+        spawn_snake(commands, segments_res);
+    }
+}
+
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
@@ -254,6 +286,7 @@ fn main() {
         .insert_resource(SnakeSegments::default())
         .insert_resource(LastTailPosition::default())
         .add_event::<GrowthEvent>()
+        .add_event::<GameOverEvent>()
         .add_systems(Startup, setup_camera) // <--
         .add_systems(Startup, spawn_snake)
         .add_systems(
@@ -267,6 +300,7 @@ fn main() {
         .add_systems(Update, snake_movement_input.before(snake_movement))
         .add_systems(Update, snake_eating.after(snake_movement))
         .add_systems(Update, snake_growth.after(snake_eating))
+        .add_systems(Update, game_over.after(snake_movement))
         // .add_systems(
         //     Update,
         //     (
